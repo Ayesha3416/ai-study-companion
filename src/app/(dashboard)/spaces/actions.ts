@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { recordActivityEvent } from "@/lib/activity/events";
+import { ensureProfile } from "@/lib/supabase/profile";
 
 const createSpaceSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
@@ -38,6 +39,11 @@ export async function createSpace(
   if (!user) {
     return { error: "Not authenticated" };
   }
+
+  // Closes a real race: profiles rows are normally created by a trigger on
+  // signup, but that's async relative to the signup request completing —
+  // see migration 0014 and profile.ts's ensureProfile for the full story.
+  await ensureProfile(supabase, user);
 
   const { data, error } = await supabase
     .from("spaces")

@@ -1742,6 +1742,50 @@ to production since they were shared in a chat):
   deploy — a separate, well-known Next.js/Vercel gotcha, fixable only by a
   hard refresh on the user's end, not a code change).
 
+- **Third bug found — this one only visible because the previous fix
+  worked** (user report: the new `error.tsx` boundary was now showing
+  "Something went wrong" for some users, even on creating a brand-new
+  Space — previously this would have been silently mislabeled as a 404 by
+  the bug fixed above, so this is genuinely new information, not a
+  regression). Root cause: every `owner_id` column
+  (`spaces.owner_id`, `projects.owner_id`, etc.) foreign-keys against
+  `public.profiles(id)`, and that row isn't created by signup directly —
+  it's created by an `on_auth_user_created` trigger that fires *after* the
+  `auth.users` insert, asynchronously relative to the signup request
+  completing. A brand-new user moving fast enough (signup → immediately
+  create their first Space, the fastest possible path through the app)
+  could have that insert fail its foreign key if the trigger hadn't
+  committed yet — a real race, not a flaky/unreproducible issue, and one
+  that would never show up in the user's OWN testing (her accounts are
+  weeks old, the trigger finished long ago for all of them) — matching
+  "all my accounts work, but some other users hit this."
+  **Fixed with 3 pieces**:
+  1. New migration `0014_profiles_insert_policy.sql` — `profiles` had
+     SELECT and UPDATE RLS policies (0001) but **no INSERT policy at all**,
+     which is *why* the schema relied on a `security definer` trigger in
+     the first place (a plain user-scoped client couldn't have inserted
+     its own profile row even if the app tried to). Added
+     `auth.uid() = id` as the INSERT check, matching the existing
+     SELECT/UPDATE policies' pattern exactly.
+  2. New `src/lib/supabase/profile.ts`'s `ensureProfile()` — an idempotent
+     `upsert({ id, email }, { ignoreDuplicates: true })`, a defensive
+     safety net alongside the trigger (not a replacement for it — the
+     trigger still handles the fast/common path; this only matters for the
+     rare race). `ignoreDuplicates: true` makes it a true no-op (not even a
+     write) on every call after a user's first, since this runs on every
+     `createSpace` call, not just a brand-new user's first one.
+  3. Wired into `spaces/actions.ts`'s `createSpace` — the very first
+     `owner_id`-referencing insert any new user makes, so closing the race
+     there is sufficient for everything downstream in the same account's
+     lifetime (once the profile row exists, every later Project/Material/
+     Conversation/etc. insert is safe regardless of trigger timing).
+  **Requires running the new migration against the production Supabase
+  project** (via the Supabase SQL Editor or CLI — this repo doesn't have
+  automated migration deployment set up, matching how migrations 0001-0013
+  were presumably applied) **in addition to redeploying the app code** —
+  the code fix alone doesn't help without the RLS policy existing in the
+  actual database. Not yet confirmed against production.
+
 ## 5. Next Immediate Step
 
 Step 35: Deployment (Vercel + Supabase + Inngest Cloud). This is the first
