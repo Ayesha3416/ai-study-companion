@@ -47,13 +47,17 @@ export async function listMessages(conversationId: string) {
 
   // Verify the conversation itself is visible to this user first (RLS-backed)
   // so a wrong/foreign conversationId 404s cleanly instead of silently
-  // rendering an empty chat.
+  // rendering an empty chat. Rethrow the *original* error rather than a
+  // generic one — the caller needs to see the real Supabase error to tell
+  // a genuine not-found apart from a transient failure (see
+  // src/lib/supabase/errors.ts).
   const { data: conversation, error: convError } = await supabase
     .from("conversations")
     .select("id")
     .eq("id", conversationId)
     .single();
-  if (convError || !conversation) throw new Error("Conversation not found");
+  if (convError) throw convError;
+  if (!conversation) throw new Error("Conversation not found");
 
   const { data, error } = await supabase
     .from("messages")

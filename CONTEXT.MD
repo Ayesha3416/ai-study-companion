@@ -1699,6 +1699,49 @@ to production since they were shared in a chat):
   which may have already had a bad cached 404 — that stale cache clears on
   redeploy, but worth confirming directly rather than assuming).
 
+- **Second, distinct 404 bug found (user report — clicking "Upload PDF" on
+  an EXISTING project landed on a 404 page, but the PDF had genuinely
+  uploaded once reloaded)**: not the same root cause as the force-dynamic
+  fix above (that one was about a brand-new ID's *first-ever* render being
+  cached; this project already existed, was already visited, wasn't new).
+  Root cause: `projects/[projectId]/page.tsx`, `spaces/[spaceId]/page.tsx`,
+  and the Tutor conversation page all used
+  `try { x = await getX(id) } catch { notFound() }` — catching **any**
+  error from the read (a genuine "this row doesn't exist," but also a
+  network blip, a momentary auth/cookie hiccup during the fresh re-render
+  a Server Action triggers, a timeout, anything) and rendering ALL of them
+  as a 404. The upload itself (`uploadMaterial`) succeeded — the file was
+  in Storage and the DB row existed — but the *page re-render* that
+  followed the mutation hit some transient read failure, and the blanket
+  catch turned that into a false "this project doesn't exist," even though
+  it obviously still did (confirmed by the reload working). The app also
+  had **no `error.tsx` anywhere**, so even a correctly-distinguished
+  genuine error would've shown Next's bare default error page, not
+  something a user could act on.
+  **Fixed**: new `src/lib/supabase/errors.ts` exports `isNotFoundError()`,
+  checking specifically for PostgREST's `PGRST116` (the code `.single()`
+  returns for zero/multiple matching rows — the actual "doesn't exist"
+  signal). Updated all 3 pages' catch blocks to call `notFound()` only
+  when `isNotFoundError(error)` is true, and rethrow anything else so it
+  reaches a real error boundary instead of lying about the resource being
+  gone. `listMessages` (tutor/actions.ts) previously discarded the real
+  Supabase error and always threw a generic `Error("Conversation not
+  found")` — changed to rethrow the original error when the query itself
+  failed, only using the generic message for the genuine empty-result
+  case, so the page can actually make the distinction. Added
+  `src/app/(dashboard)/error.tsx` — a proper "Something went wrong, try
+  again" boundary with a reset button, so a genuine transient error (which
+  should now be rare, but isn't impossible) gives the user something
+  actionable instead of a dead end.
+  **Not yet confirmed against production** — needs redeploy + retest, same
+  as the force-dynamic fix above. If "click upload → false 404" still
+  happens after this, the next diagnostic step is checking the browser's
+  Network tab for the actual failing request's response body/status during
+  a repro, since that would point at a genuinely different cause (e.g. a
+  stale Server Action reference from a page loaded before the latest
+  deploy — a separate, well-known Next.js/Vercel gotcha, fixable only by a
+  hard refresh on the user's end, not a code change).
+
 ## 5. Next Immediate Step
 
 Step 35: Deployment (Vercel + Supabase + Inngest Cloud). This is the first

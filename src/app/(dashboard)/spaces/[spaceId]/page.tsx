@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 import { getSpace } from "../actions";
 import { listProjectsForSpace } from "./projects/actions";
 import { NewProjectForm } from "./projects/new-project-form";
+import { isNotFoundError } from "@/lib/supabase/errors";
 
 export default async function SpaceDashboardPage({
   params,
@@ -23,8 +24,10 @@ export default async function SpaceDashboardPage({
   let space;
   try {
     space = await getSpace(spaceId);
-  } catch {
-    notFound();
+  } catch (error) {
+    // See src/lib/supabase/errors.ts — only a genuine not-found is a 404.
+    if (isNotFoundError(error)) notFound();
+    throw error;
   }
 
   const projects = await listProjectsForSpace(spaceId);

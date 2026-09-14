@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getProject } from "@/app/(dashboard)/spaces/[spaceId]/projects/actions";
+import { isNotFoundError } from "@/lib/supabase/errors";
 import { listMaterialsForProject } from "./materials/actions";
 import { UploadMaterialForm } from "./materials/upload-material-form";
 import { MaterialsList } from "./materials/materials-list";
@@ -20,8 +21,13 @@ export default async function ProjectDashboardPage({
   let project;
   try {
     project = await getProject(projectId);
-  } catch {
-    notFound();
+  } catch (error) {
+    // Only a genuine "this project doesn't exist" is a 404 — anything else
+    // (network blip, a momentary auth/cookie hiccup) rethrows to the
+    // nearest error.tsx instead of falsely telling the user it's gone.
+    // See src/lib/supabase/errors.ts for why this distinction matters.
+    if (isNotFoundError(error)) notFound();
+    throw error;
   }
 
   const supabase = await createClient();

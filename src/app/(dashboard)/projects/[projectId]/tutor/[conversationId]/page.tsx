@@ -8,6 +8,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { listMessages } from "../actions";
 import { TutorChat } from "../tutor-chat";
+import { isNotFoundError } from "@/lib/supabase/errors";
 
 // Server Actions on this page (sendMessage) make a synchronous grounded-AI
 // call (retrieval + Groq generation); the platform default (as low as 10s
@@ -26,8 +27,10 @@ export default async function ConversationPage({
   let messages;
   try {
     messages = await listMessages(conversationId);
-  } catch {
-    notFound();
+  } catch (error) {
+    // See src/lib/supabase/errors.ts — only a genuine not-found is a 404.
+    if (isNotFoundError(error)) notFound();
+    throw error;
   }
 
   return (
