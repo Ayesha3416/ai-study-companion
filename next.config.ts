@@ -2,17 +2,15 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
-  experimental: {
-    serverActions: {
-      // uploadMaterial (materials/actions.ts) accepts PDFs up to 20MB —
-      // Next.js's default Server Action body limit is 1MB, which would
-      // silently 413 any upload over that before uploadMaterial's own
-      // MAX_FILE_SIZE_BYTES check ever runs. Set a bit above 20MB to
-      // leave room for multipart/form-data boundary/header overhead.
-      bodySizeLimit: "22mb",
-    },
-  },
+  // Step 35 deployment fix: @napi-rs/canvas added alongside pdf-parse and
+  // pdfjs-dist. Without it explicitly listed here, Vercel's bundler tried
+  // to bundle @napi-rs/canvas's native platform binary (rather than
+  // externalizing it to load from node_modules at runtime like it does for
+  // pdf-parse/pdfjs-dist), which doesn't work for a native addon — this
+  // was the real cause of production's "ReferenceError: DOMMatrix is not
+  // defined" (pdf-parse's DOM-global polyfills come from this package; see
+  // process-material.ts's import comment for the other half of this fix).
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@napi-rs/canvas"],
 };
 
 export default nextConfig;

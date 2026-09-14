@@ -1,3 +1,17 @@
+// Import order matters here (pdf-parse's own troubleshooting docs are
+// explicit about this): pdf-parse internally loads pdfjs-dist, which
+// touches browser-only globals (DOMMatrix, Path2D, ImageData) at *module
+// evaluation time*, not when a function is called. Node has none of these
+// by default. `pdf-parse/worker` sets up a CanvasFactory backed by
+// @napi-rs/canvas (a native addon, works in Node) that supplies them — but
+// only if it's imported and evaluated before `pdf-parse` itself. Importing
+// it after, or not passing the resulting CanvasFactory into every
+// PDFParse instance, is exactly what produced this project's real
+// production crash: `ReferenceError: DOMMatrix is not defined` on Vercel
+// (worked fine locally, where the failure mode differs — see
+// next.config.ts's serverExternalPackages comment for the deployment side
+// of this same fix).
+import { CanvasFactory } from "pdf-parse/worker";
 import { PDFParse } from "pdf-parse";
 import { inngest } from "../client";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -114,7 +128,7 @@ export const processMaterial = inngest.createFunction(
     // every page's text in one pass over the document.
     const { pages, pageCount } = await step.run("extract-text", async () => {
       const buffer = Buffer.from(fileBase64, "base64");
-      const parser = new PDFParse({ data: buffer });
+      const parser = new PDFParse({ data: buffer, CanvasFactory });
 
       try {
         const result = await parser.getText({
