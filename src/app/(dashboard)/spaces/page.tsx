@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic"; // same caching lesson as every other frequently-changing dashboard in this app
 import Link from "next/link";
 import { listSpaces } from "./actions";
 import { NewSpaceForm } from "./new-space-form";

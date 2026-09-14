@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { generateNextQuizQuestion } from "@/lib/ai/quiz";
 import { gradeOpenEndedAnswer } from "@/lib/ai/grading";
@@ -28,6 +29,7 @@ export async function startQuizAttempt(projectId: string) {
     metadata: { quizAttemptId: data.id },
   });
 
+  revalidatePath(`/projects/${projectId}/quiz/${data.id}`); // defense in depth — that page already has force-dynamic, but see spaces/[spaceId]'s fix comment for why relying on that alone was the original bug
   redirect(`/projects/${projectId}/quiz/${data.id}`);
 }
 
@@ -254,5 +256,6 @@ export async function finishQuiz(projectId: string, quizAttemptId: string) {
     });
   }
 
+  revalidatePath(`/projects/${projectId}`); // that page already has force-dynamic — same defense-in-depth reasoning as the quiz-start redirect above
   redirect(`/projects/${projectId}`);
 }

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { startQuizAttempt } from "./actions";
 
+export const dynamic = "force-dynamic"; // same fix as every other page in this sweep — this project is visited repeatedly, not just right after creation, but no reason to leave it as the one exception
+
 // startQuizAttempt generates the first question via a synchronous
 // generateStructured AI call — same reasoning as the Tutor page.
 export const maxDuration = 60;

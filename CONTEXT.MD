@@ -1451,159 +1451,253 @@ to production since they were shared in a chat):
   `tests/**/*.test.ts`). `package.json` gets `"test": "vitest run"` and
   `"test:watch": "vitest"`.
 
-- **Bug fix (Step 35, deployment) — production 500 on `/api/inngest`,
-  found via the user's actual Vercel Runtime Logs, not guessed**: after
-  deploying to Vercel, materials stayed stuck at `queued` forever. Initial
-  hypotheses (Inngest env vars missing, `INNGEST_DEV` leaking into
-  production, Vercel Deployment Protection blocking the sync) were each
-  ruled out one at a time by having the user check them directly — all
-  came back clean/already-correct. Visiting `/api/inngest` in the browser
-  first appeared to redirect to `/login`, which looked like `proxy.ts`
-  (this app's own auth gate) was the culprit — but re-checking `proxy.ts`
-  showed `/api/inngest` isn't in `PROTECTED_PREFIXES` at all, so that
-  couldn't be it either, and a clean re-test in incognito showed the real
-  behavior: a genuine HTTP 500, not a redirect (the earlier `/login`
-  sighting was almost certainly a stale tab/navigation artifact, not
-  reproducible). Vercel's Runtime Logs gave the actual answer: `Error:
-  Failed to load external module pdf-parse-<hash>`.
-  This is a documented Next.js 16 + Turbopack issue (confirmed via web
-  search against multiple open `vercel/next.js` GitHub issues describing
-  the identical `Failed to load external module <package>-<hash>`
-  signature for other packages too — pino, axios/get-intrinsic,
-  @opentelemetry/instrumentation), not something specific to this app's
-  code: packages listed in `serverExternalPackages` (this project already
-  correctly lists `pdf-parse`/`pdfjs-dist` there, per Step 17's PDF-parsing
-  work) are told not to be bundled and instead loaded directly from
-  `node_modules` at runtime — but Turbopack's production/standalone file
-  tracing frequently fails to actually copy those packages' real files
-  into the deployed serverless function, so the runtime `require()` for
-  the externalized module finds nothing there and throws exactly this
-  error. `pdfjs-dist` (a `pdf-parse` dependency) has its own additional
-  documented Turbopack-specific issues (top-level `await` handling) on top
-  of this. Since `route.ts` for `/api/inngest` imports `processMaterial`
-  from `process-material.ts`, which imports `pdf-parse`, the crash at
-  import time took down the *entire* Inngest route — both the GET
-  introspection endpoint Inngest Cloud uses to sync, and the PUT endpoint
-  that actually runs jobs. This is why the symptom looked like "Inngest
-  isn't syncing" even though the real problem had nothing to do with
-  Inngest configuration at all.
-  **Fix**: `package.json`'s `build` script changed from `"next build"` to
-  `"next build --webpack"` — the standard, widely-reported workaround
-  across the GitHub issues found above (Turbopack is Next.js 16's new
-  default; Webpack's older, more mature file-tracing handles
-  `serverExternalPackages` correctly for this class of package). Left
-  `dev` as plain `next dev` (Turbopack) — this class of bug is specific to
-  production's standalone/serverless file tracing, not dev mode, which is
-  consistent with local `npm run dev` having processed materials
-  successfully for the user throughout this entire build.
-  **Not yet confirmed against a real redeploy** — the user needs to push
-  this change, let Vercel redeploy with the new build command, and
-  re-test a PDF upload end-to-end. Worth checking, if Vercel doesn't pick
-  it up automatically: Vercel's Project Settings → Build & Development
-  Settings → "Override Build Command" — if a custom command is set there
-  instead of "inherited from package.json," it needs to be cleared (or
-  updated to `next build --webpack` directly) for this fix to actually
-  take effect.
-  **Update: redeployed, and this fix alone was not sufficient.** The
-  redeploy did succeed, but `/api/inngest` still 500'd — and the fresh
-  stack trace from Vercel's logs still showed `[turbopack]_runtime.js`,
-  meaning the `--webpack` build-command change never actually took effect
-  (this needs to be re-checked against Vercel's "Override Build Command"
-  setting per the note directly above — likely still unresolved). More
-  importantly, that same fresh log revealed a *second*, more specific
-  error underneath the generic "Failed to load external module" one:
-  `ReferenceError: DOMMatrix is not defined`.
-  **Real root cause, confirmed by actually reproducing and fixing it
-  locally, not just pattern-matching a blog post**: `pdf-parse` v2 wraps
-  `pdfjs-dist` internally, which touches browser-only globals (`DOMMatrix`,
-  `Path2D`, `ImageData`) the moment its module evaluates — not when a
-  function is called. In Node, `pdfjs-dist` auto-detects it's not in a
-  browser and falls back to a `NodeCanvasFactory` backed by
-  `@napi-rs/canvas` (a native addon) to supply those globals instead — but
-  this project's code never told `PDFParse` to use that factory
-  explicitly, and `@napi-rs/canvas` existed only as a *transitive*
-  dependency (pulled in by `pdf-parse`, not listed in this project's own
-  `package.json`) and wasn't in `serverExternalPackages` at all. Locally,
-  Node's default module resolution finds `@napi-rs/canvas` naturally
-  regardless, so it silently worked (confirmed by literally running the
-  unmodified extraction code against this project's own
-  `Project_Requirements.pdf` in this sandbox — it succeeded even without
-  passing `CanvasFactory` explicitly). Vercel's serverless bundler doesn't
-  reliably carry that same implicit resolution through for a native addon,
-  so the fallback silently failed there instead, throwing
-  `DOMMatrix is not defined`. Confirmed the fix resolves it by testing
-  the corrected code against the same real PDF in this same sandbox: with
-  `CanvasFactory` from `pdf-parse/worker` explicitly imported (before
-  `pdf-parse` itself — import order matters, since `pdf-parse/worker` is
-  what installs the polyfilled globals) and passed into `PDFParse` as
-  `{ data: buffer, CanvasFactory }`, extraction succeeded — 52,297
-  characters out of that PDF, both with and without the fix locally
-  (expected, since local Node was never the environment exhibiting the
-  bug) — the actual value of this fix is specifically for Vercel's
-  environment, which this sandbox can't reproduce directly, so the
-  fix is grounded in the pdf-parse's own official troubleshooting docs and
-  pdfjs-dist's own source (confirmed by reading
-  `node_modules/pdfjs-dist/legacy/build/pdf.mjs` directly: it does
-  `new CanvasFactory({...})` internally, meaning the constructor param
-  must be a *class reference*, not an instance — corrected an initial
-  wrong guess at the option name/shape before checking pdf-parse's actual
-  shipped `.d.ts` files, rather than trusting a blog post's paraphrase).
-  **Three-part fix**:
-  1. `process-material.ts`: `import { CanvasFactory } from "pdf-parse/worker"`
-     placed *before* `import { PDFParse } from "pdf-parse"`, and
-     `new PDFParse({ data: buffer, CanvasFactory })` instead of
-     `new PDFParse({ data: buffer })`.
-  2. `next.config.ts`: added `@napi-rs/canvas` to `serverExternalPackages`
-     alongside the existing `pdf-parse`/`pdfjs-dist` entries — without
-     this, Vercel's bundler tries to bundle the native binary itself
-     rather than loading it from `node_modules` at runtime, which doesn't
-     work for a native addon.
-  3. `package.json`: added `@napi-rs/canvas` as an explicit direct
-     dependency (pinned to `0.1.80`, the version already resolved
-     transitively via `pdf-parse` — matches what's already tested rather
-     than introducing a new, unverified version) rather than leaving it
-     implicit. A package a build config explicitly references
-     (`serverExternalPackages`) should be a direct dependency, not rely on
-     a specific transitive resolution that could change if `pdf-parse`
-     itself changes its own dependency later.
-  **Still not yet confirmed against an actual Vercel redeploy** — the
-  `--webpack` build command issue from the entry above this one is also
-  still unresolved and needs the user to check Vercel's Override Build
-  Command setting. Both fixes should be verified together on the next
-  deploy: confirm the runtime log no longer says `[turbopack]_runtime.js`
-  (webpack fix took effect) AND that a real PDF upload reaches `ready`
-  without a `DOMMatrix` error (canvas fix took effect).
-  **Update: confirmed working.** The Inngest Cloud dashboard now shows
-  `ai-study-companion` Active with both functions (`process-material` and
-  its `onFailure` handler) correctly registered, confirming the
-  `/api/inngest` route no longer crashes and the signing key is correctly
-  enforced (a plain unsigned browser visit correctly returning
-  `{"message":"Unauthorized"}` — verified against Inngest's own docs that
-  this is expected production behavior, not a new bug, before telling the
-  user it was good news).
+- **Pre-deployment review (new session, before Step 35)**: analyzed the
+  whole project for issues that would only bite once actually deployed,
+  since this is the first step where that matters. Found and fixed 2 real
+  deployment blockers, neither would have been caught by `tsc`/`eslint`/
+  `vitest` since both are runtime-platform behavior, not type errors:
+  1. **Server Action body size limit**: `uploadMaterial` (materials/
+     actions.ts) has always accepted PDFs up to 20MB (`MAX_FILE_SIZE_BYTES`),
+     but Next.js caps Server Action request bodies at **1MB by default**
+     with nothing in `next.config.ts` overriding it — every upload over
+     ~1MB would have 413'd before `uploadMaterial` ever ran, completely
+     silently in local dev if never tested with a real multi-page PDF
+     (most test PDFs during earlier steps were likely small). Fixed via
+     `experimental.serverActions.bodySizeLimit: "22mb"` in `next.config.ts`
+     (20MB + headroom for multipart/form-data overhead, confirmed via
+     current — Feb 2026 — Next.js docs before setting the number).
+  2. **No `maxDuration` set anywhere**, while several routes make
+     synchronous AI calls (Tutor response, quiz question generation,
+     open-ended grading, the Step 32 eval harness) that can occasionally
+     run several seconds — close to or past a short default function
+     timeout depending on hosting plan/compute mode. Added
+     `export const maxDuration = 60;` to the four pages whose Server
+     Actions call `generateText`/`generateStructured` (Tutor conversation
+     page, Quiz start page, Quiz attempt page, Admin Evaluation page —
+     confirmed via Next.js's own docs that `maxDuration` exported from a
+     page applies to all Server Actions invoked from it) and to
+     `api/inngest/route.ts` (Inngest invokes this route to execute each
+     `processMaterial` step — embedding a large PDF's many chunks can add
+     up). 60s is a safe value across both Hobby and Pro Vercel tiers as of
+     this check. **Flagged for the user, not silently assumed**: exact
+     platform timeout defaults/maximums depend on the specific Vercel plan
+     and whether Fluid Compute is enabled, both only knowable once the
+     user's own Vercel project exists — these explicit values remove the
+     ambiguity regardless of which default would otherwise have applied.
+  Also checked and found clean: no secrets committed (`.gitignore` already
+  covers `.env*`, confirmed no API-key-shaped strings anywhere in `src/`
+  or the docs files), the stray `supapase` typo folder the user was asked
+  to check for is confirmed gone from what they packaged this session,
+  `quiz/actions.ts`'s atomic-claim idempotency fixes (Step 33) and
+  `provider.ts`'s Step 31 usage-logging wiring both re-read line by line
+  with no issues found.
 
-- **Bug fix (Step 35, deployment) — intermittent 404 on pages reached
-  immediately after creating something, fixed on reload**: user reported
-  some pages 404 right after being redirected to them (e.g., right after
-  creating a Space), but reloading the same URL a moment later works fine.
-  Swept every page calling `notFound()` after fetching by a URL param and
-  checked each for `export const dynamic = "force-dynamic"` — every other
-  equivalent detail page in this app already sets this (added deliberately
-  across earlier steps specifically to keep these pages always
-  server-rendered per-request rather than risk Next.js treating them as
-  cacheable), but two were missed: `spaces/[spaceId]/page.tsx` and
-  `projects/[projectId]/tutor/[conversationId]/page.tsx`. Both are exactly
-  the shape of page this symptom hits hardest: reached via a `redirect()`
-  immediately after an insert (`createSpace` → `/spaces/${data.id}`;
-  starting a new Tutor conversation → `/tutor/${conversationId}`), so
-  there's no time gap between the row existing and the page trying to read
-  it back — any caching Next.js applies by default to a dynamic segment
-  page not explicitly opted out of it becomes a real race, not just a
-  theoretical one. Added `export const dynamic = "force-dynamic"` to both,
-  matching the pattern already established everywhere else in this
-  codebase. Verified via a full sweep (`grep` for every `page.tsx` calling
-  `notFound()`) that all four such pages now have the directive, not just
-  the two reported.
+- **Demo access decision (PRD §83, resolved with the user before Step 35)**:
+  one demo account, not a self-signup pointer and not a fully-seeded
+  account — matches the user's own stated preference ("no seed"). Given
+  it's a single account, made it an **admin** account rather than a plain
+  user: `requireAdmin()` only checks `profiles.role`, nothing stops an
+  admin from also using every regular product feature, so logging in once
+  as `demo@ai-study-companion.app` covers both PRD §79's product journey
+  (Spaces → Projects → Tutor → Quiz → Growth → Analytics) and its Admin
+  journey in the same session — and since this is the only account that
+  will exist, whatever the evaluator does during the product-journey half
+  shows up as real data in the Admin Dashboard half, without needing any
+  separately-seeded admin data at all. Created via the app's own `/signup`
+  page (the user turned off Supabase's "Confirm email" requirement first,
+  so signup completes immediately) then promoted via the exact SQL
+  `0001_core_schema.sql` already documents in its own comment for this —
+  no new mechanism, just using what the schema already provided for
+  exactly this purpose. Documented in a new "Demo Access" section at the
+  top of `README.md` (ahead of Step 36's full README rewrite — this one
+  section couldn't wait, since PRD §83 needs it live for deployment, not
+  just for the final docs pass).
+
+- **Real security/isolation bug found (via user report — an admin's own
+  personal Home Dashboard was showing another user's data)**: not a UI
+  confusion, a genuine cross-user data leak affecting every admin account.
+  **Root cause**: every table's SELECT RLS policy is `auth.uid() = owner_id
+  OR public.is_admin()` — intentional and correct, since the real Admin
+  Dashboard (`admin/*.ts`) needs exactly that broad read access to work at
+  all. But several *non-admin* modules that are supposed to show only "MY
+  own stuff" never added their own explicit `owner_id` filter — they
+  relied entirely on RLS to scope results, on the (previously undocumented,
+  now-proven-false) assumption that "the user-scoped client only ever sees
+  this user's own rows." That's true for a regular user, but false for an
+  admin session, whose queries silently return *every* user's rows the
+  moment a query skips the explicit filter — meaning any admin's own
+  Home Dashboard, Global Analytics, and "Your Spaces" page were displaying
+  the combined data of every user on the platform, automatically, just by
+  being logged in as an admin — no deliberate action needed to trigger it.
+  **Fixed in 3 files** (all previously relied on RLS alone; all now filter
+  explicitly):
+  1. `home-dashboard.ts` — `getHomeDashboardData()` now fetches the current
+     user first and adds `.eq("owner_id", user.id)` to all 6 queries
+     (spaces count, projects count, concept_mastery ×2, activity_events,
+     recommendations).
+  2. `global-analytics.ts` — same fix across all 7 top-level queries, plus
+     the inner mastery-trend loop's `mastery_history` lookup (not strictly
+     necessary there, since `concept_id` values already come from the
+     now-scoped `masteryResult` query — added anyway as defense in depth,
+     since "this query doesn't need its own filter because an earlier one
+     already scoped it" is the exact unstated assumption that caused this
+     whole bug). The module's own header comment used to explicitly assert
+     RLS-alone was sufficient — corrected to explain why that's wrong for
+     admin sessions specifically.
+  3. `spaces/actions.ts`'s `listSpaces()` — same fix; this was the most
+     visible symptom, since it meant "Your Spaces" for any admin literally
+     listed every user's Spaces.
+  **Narrower, related issue found but deliberately NOT fixed (documented
+  per PRD §81)**: `listProjectsForSpace(spaceId)` and `getSpace(spaceId)`/
+  `getProject(projectId)` are scoped by a specific row ID, not an
+  across-the-table aggregate — so they don't leak automatically the way
+  the three fixes above did. But since `getSpace`/`getProject` rely on RLS
+  alone to gate a *specific* row, an admin who directly navigated to
+  another user's `/spaces/{id}` or `/projects/{id}` URL (not exposed
+  anywhere in the UI's own links, now that `listSpaces` is fixed — would
+  require deliberately knowing/guessing a UUID) could still open that
+  page as if it were their own, including interacting with their Tutor/
+  Quiz through the regular product UI rather than a read-only Admin view.
+  Left as-is: meaningfully closing this would mean adding an explicit
+  owner check to every single project/space-scoped read across the app
+  (materials, quiz, tutor, analytics, context — the full list grepped
+  during this audit), which is a much larger change for a much narrower,
+  deliberate-action-required risk than the three automatic leaks just
+  fixed. Worth a full pass if this app were headed toward production;
+  reasonable to leave for a prototype, now that it's a documented,
+  understood trade-off rather than an unknown gap.
+  **Also checked and confirmed safe** (scoped by a specific ID already, or
+  writes rather than reads): `project-analytics.ts` (scoped by
+  `projectId` param throughout), all `materials/quiz/tutor actions.ts`
+  files (project/question/conversation-ID-scoped), `admin/*.ts` (correctly
+  and intentionally relies on the RLS admin-bypass — that's its whole job).
+
+- **Responsiveness + missing-nav pass (new session, before Step 35)**: the
+  user asked for a full mobile-responsiveness pass, missing functionality
+  to be added, and broken functionality to be fixed, working from a
+  partial copy of the repo (uploaded as a zip, not a fresh `git clone`) —
+  **no `node_modules`, no network access in this sandbox**, so none of
+  this session's edits were verified with `tsc --noEmit`/`eslint`/
+  `vitest`. Run all three locally before trusting this is regression-free,
+  per this file's own repeated "static review alone keeps missing things"
+  lesson from Steps 29-30.
+  **Responsiveness fixes** (grepped for `grid-cols-` without a `sm:`
+  breakpoint, plain `<table>` with no scroll wrapper, and fixed pixel
+  widths — the same techniques used to build/verify everything else in
+  this file):
+  1. Two stat grids didn't follow the `grid-cols-2 sm:grid-cols-N` pattern
+     used everywhere else — Home's "Overall Progress" and Admin User
+     Detail's "Usage" section both had a bare `grid-cols-3` with no mobile
+     fallback. Fixed to `grid-cols-2 sm:grid-cols-3`, matching every other
+     stat grid in the app.
+  2. Five plain `<table>` elements had no responsive handling at all —
+     `admin/projects/page.tsx` (8 columns — the worst offender), both
+     tables in `admin/ai-usage/page.tsx`, and `admin/spaces/page.tsx`.
+     `admin/users/page.tsx` already wrapped its table correctly
+     (`overflow-x-auto rounded-lg border` + a `min-w-[...]` floor on the
+     `<table>` itself) — used that as the reference pattern and applied it
+     to the other four rather than inventing a second approach.
+  3. **Bigger, project-wide gap**: every one of the app's 20 page
+     containers used a flat `p-8` (32px) with no mobile scale-down —
+     ~17% of a 375px-wide phone's width eaten by padding alone on every
+     side, compounding with the grid/table issues above. Changed all 20 to
+     `p-4 sm:p-8` (including the login/signup form cards).
+  4. Admin nav bar (8 links + "Back to App" in one `flex` row, fixed
+     `px-8`) had no wrap or scroll — would overflow the viewport on
+     narrow screens. Fixed to `overflow-x-auto` + `whitespace-nowrap` +
+     hidden scrollbar (horizontal swipe instead of broken layout), and
+     `px-8` → `px-4 sm:px-8` to match the page-container fix above.
+  5. Admin Evaluation page's header (a long descriptive paragraph next to
+     a "Run Evaluation Now" button, both in one unwrapped `flex
+     justify-between` row) squeezed the paragraph into a narrow column on
+     mobile. Changed to `flex-col` on mobile, `sm:flex-row` at the `sm:`
+     breakpoint — same stacking approach used for the Tutor/Quiz message
+     layouts elsewhere.
+  6. Tutor chat window had a fixed `h-[600px]` — taller than the viewport
+     on some phones, forcing extra page scroll around an already-scrollable
+     panel. Changed to `h-[70vh] max-h-[600px] min-h-[360px]`.
+  7. `globals.css` had a `prefers-color-scheme: dark` media query flipping
+     the body background/foreground to near-black/near-white — but **zero**
+     components anywhere in the app use Tailwind's `dark:` variant, so
+     every card/border/text color stays hardcoded for light mode. On a
+     phone with system dark mode on (the default on most phones), this
+     produced a broken, low-contrast half-dark page. Confirmed via
+     `grep -rln "dark:" src` returning nothing before removing the
+     override — since dark mode isn't actually implemented, staying
+     consistently light is the correct fix until a real dark theme with
+     matching `dark:` classes gets built.
+  **Missing functionality found and added**: there was no persistent
+  navigation anywhere **outside** `/admin` — every non-admin page only had
+  a single "back to parent" breadcrumb link (Project → its Space, Quiz
+  attempt → its Project, etc.), so getting from deep inside a Tutor
+  conversation or Quiz back to Home/Spaces/Analytics meant editing the URL
+  by hand. This is a real gap against PRD §54's own framing of Home as
+  "the user's starting point" — a starting point you can only ever reach
+  by typing a URL isn't really one. Added
+  `src/app/(dashboard)/layout.tsx` — a shared top nav (Home / Spaces /
+  Analytics / Admin-if-admin / email / Sign out) wrapping every route
+  under `(dashboard)` (admin routes keep their own nested nav for
+  admin-specific sub-links; this is additive, not a replacement). Mirrors
+  the admin nav's responsive scroll pattern from fix #4 above. Only
+  renders when a session exists (`user &&` guard), so `/login`/`/signup`
+  are unaffected.
+  Reusing this new nav made Home page's own header redundant (it had
+  separately duplicated Spaces/Analytics/Admin/Sign-out as an **unwrapped
+  4-button row crowding the welcome message** — itself a mobile overflow
+  risk that hadn't been caught before). Simplified Home's header down to
+  just the welcome message + subtitle, removing the now-dead `isAdmin`
+  profile lookup and `signOut` import from that file (moved into the new
+  layout instead).
+  **Also fixed while in these files**: root layout's `<title>`/description
+  metadata was still literally "Create Next App" / "Generated by create
+  next app" — the actual product name/description had never been set.
+  Fixed in `src/app/layout.tsx`.
+  **Not yet done, flagged for the next session**: this was a UI-layer
+  sweep (Tailwind classes, page structure) grepped systematically across
+  every `.tsx` file under `src/app`/`src/components` — it did not re-audit
+  business logic, the AI pipeline, or anything already covered by Steps
+  1-34's extensive bug sweeps above. If "fix broken functionality" turns
+  up anything beyond what's already documented in this file, it needs a
+  separate pass through the actual feature logic (quiz adaptivity, mastery
+  math, retrieval, etc.), not just the UI layer this session touched.
+
+- **Real production bug found and fixed (user report — deployed app showing
+  intermittent 404s on Space/Project/Tutor/Quiz pages right after creation,
+  and *persistent* 404s for specific other users hitting the same URL)**:
+  root cause was `export const dynamic = "force-dynamic"` missing from
+  several dynamic-ID pages, even though the pattern was already correctly
+  applied elsewhere (`projects/[projectId]/page.tsx`, `home/page.tsx`).
+  Without it, Next.js can statically generate a dynamic-segment page on its
+  first-ever visit and cache that response — including a 404, if that first
+  render loses a race right after the row was just created (e.g. an auth/
+  RLS timing edge case on a brand-new row). Once cached, that 404 gets
+  served to **every subsequent visitor of that exact URL**, not just
+  whoever triggered it — which is exactly why it looked like "works for me
+  sometimes" (different IDs' first-renders winning or losing the race) AND
+  "completely broken for other users" (a specific ID's cached 404 being
+  stable across separate people/sessions) at the same time. A prior
+  session's commit ("Fix intermittent 404 on Space/Tutor conversation pages
+  after creation") only added `revalidatePath` calls on the *listing* pages
+  being left, never on the *destination* pages being redirected to, and
+  never added the missing `force-dynamic` export itself — so the actual
+  bug was still live in production despite that commit's title.
+  **Fixed — added `export const dynamic = "force-dynamic"` to every
+  dynamic-ID page that was still missing it**:
+  `spaces/[spaceId]/page.tsx`, `tutor/[conversationId]/page.tsx`,
+  `spaces/page.tsx`, `tutor/page.tsx` (listing), `quiz/page.tsx`.
+  (`quiz/[quizAttemptId]/page.tsx` already had it from Step 35's maxDuration
+  pass.) Also added `revalidatePath()` on the **destination** path (not
+  just the listing being left) in every creation action that redirects to a
+  brand-new ID — `spaces/actions.ts`'s `createSpace`,
+  `spaces/[spaceId]/projects/actions.ts`'s `createProject`,
+  `tutor/page.tsx`'s `handleNewConversation`, and `quiz/actions.ts`'s
+  `startQuizAttempt`/finish-quiz redirect — as defense in depth alongside
+  the `force-dynamic` fix, not a replacement for it.
+  **Not yet confirmed against production** — this fix needs the user to
+  redeploy, then specifically retest by creating a *brand-new* Space,
+  Project, Tutor conversation, and Quiz attempt (not revisiting old ones,
+  which may have already had a bad cached 404 — that stale cache clears on
+  redeploy, but worth confirming directly rather than assuming).
 
 ## 5. Next Immediate Step
 

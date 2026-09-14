@@ -79,6 +79,7 @@ export async function createProject(
   });
 
   revalidatePath(`/spaces/${parsed.data.spaceId}`);
+  revalidatePath(`/projects/${data.id}`); // defense in depth — revalidate the destination we're about to redirect to, not just the listing we're leaving
   redirect(`/projects/${data.id}`);
 }
 

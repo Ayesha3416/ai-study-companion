@@ -62,6 +62,7 @@ export async function createSpace(
   });
 
   revalidatePath("/spaces");
+  revalidatePath(`/spaces/${data.id}`); // defense in depth alongside the force-dynamic fix on that page — revalidate the destination we're about to redirect to, not just the listing we're leaving
   redirect(`/spaces/${data.id}`);
 }
 

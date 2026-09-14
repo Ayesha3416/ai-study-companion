@@ -1,5 +1,12 @@
 export const dynamic = "force-dynamic";
-
+// **Bug fix**: this page was missing force-dynamic while projects/[projectId]
+// and home/page.tsx already had it. Without it, Next.js can statically
+// generate this dynamic-ID page on its first-ever visit and cache that
+// response — including a 404 if that first render loses a race right after
+// the Space was just created (e.g. an auth/RLS check timing issue on a
+// brand-new row). Once cached, that 404 gets served to EVERY subsequent
+// visitor of that exact URL, not just the user who hit it — this is what
+// was causing "works for me sometimes, completely 404 for other users."
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSpace } from "../actions";
@@ -23,7 +30,7 @@ export default async function SpaceDashboardPage({
   const projects = await listProjectsForSpace(spaceId);
 
   return (
-    <div className="mx-auto max-w-3xl p-8 space-y-8">
+    <div className="mx-auto max-w-3xl p-4 sm:p-8 space-y-8">
       <div>
         <h1 className="text-xl font-semibold">
           {space.icon} {space.name}

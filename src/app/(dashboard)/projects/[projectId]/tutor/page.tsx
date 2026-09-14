@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listConversations, startConversation } from "./actions";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { LocalTimestamp } from "@/components/local-timestamp";
 
 export const dynamic = "force-dynamic"; // always show the freshest conversation list, never a cached one
@@ -16,6 +17,7 @@ export default async function TutorPage({
   async function handleNewConversation() {
     "use server";
     const conversationId = await startConversation(projectId);
+    revalidatePath(`/projects/${projectId}/tutor/${conversationId}`); // defense in depth alongside the force-dynamic fix on that destination page
     redirect(`/projects/${projectId}/tutor/${conversationId}`);
   }
 
