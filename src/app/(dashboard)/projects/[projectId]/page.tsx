@@ -35,14 +35,37 @@ export default async function ProjectDashboardPage({
     data: { user },
   } = await supabase.auth.getUser();
   if (user) {
-    await recordActivityEvent({
-      ownerId: user.id,
-      eventType: "project_accessed",
-      projectId,
-    });
+    // Activity tracking is a nice-to-have, not core to the page rendering
+    // correctly — same principle PRD §49 already applies to the
+    // recommendation call below. A transient failure here (a network
+    // blip, a brief auth/cookie timing hiccup during the exact re-render
+    // this page's own Upload PDF action triggers) shouldn't take down a
+    // page whose actual content (the project + materials the person just
+    // uploaded) loaded fine.
+    try {
+      await recordActivityEvent({
+        ownerId: user.id,
+        eventType: "project_accessed",
+        projectId,
+      });
+    } catch (error) {
+      console.error("Failed to record project_accessed activity:", error);
+    }
   }
 
-  const materials = await listMaterialsForProject(projectId);
+  // Same reasoning as above: the materials list is important, but a
+  // transient failure reading it shouldn't crash the whole dashboard when
+  // the project itself (already fetched above) is fine — degrade to an
+  // empty list and let the client-side poll in MaterialsList pick it up
+  // moments later, rather than showing the user a dead-end error page for
+  // what's very likely a momentary blip, not a real problem with their
+  // data.
+  let materials: Awaited<ReturnType<typeof listMaterialsForProject>> = [];
+  try {
+    materials = await listMaterialsForProject(projectId);
+  } catch (error) {
+    console.error("Failed to list materials for project:", error);
+  }
 
   // Only bother generating a recommendation once there's at least one
   // material — an empty new project has nothing meaningful to recommend,

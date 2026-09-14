@@ -30,7 +30,15 @@ export default async function SpaceDashboardPage({
     throw error;
   }
 
-  const projects = await listProjectsForSpace(spaceId);
+  // Same principle as projects/[projectId]/page.tsx: a transient failure
+  // reading the project list shouldn't crash the whole Space dashboard
+  // when the Space itself (already fetched above) is fine.
+  let projects: Awaited<ReturnType<typeof listProjectsForSpace>> = [];
+  try {
+    projects = await listProjectsForSpace(spaceId);
+  } catch (error) {
+    console.error("Failed to list projects for space:", error);
+  }
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-8 space-y-8">

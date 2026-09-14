@@ -1786,6 +1786,54 @@ to production since they were shared in a chat):
   the code fix alone doesn't help without the RLS policy existing in the
   actual database. Not yet confirmed against production.
 
+- **Fourth bug found (user report — deployed, migration 0014 confirmed run
+  in production, yet the NEW `error.tsx` boundary was still firing for
+  "other users," specifically and only during PDF upload on an already-
+  existing project — her own accounts unaffected)**: this is progress, not
+  a regression — it means the second bug's fix (distinguishing genuine
+  404s from real errors) is working exactly as designed, correctly
+  surfacing a real error via `error.tsx` instead of lying about it as a
+  404. The real error just hadn't been found yet. Root cause: in
+  `projects/[projectId]/page.tsx`, right next to the already-patched
+  `getProject()` call, two more calls ran completely unguarded in the same
+  render path — `recordActivityEvent(...)` and
+  `listMaterialsForProject(projectId)` — even though the very next lines
+  of that same file already establish the correct principle for exactly
+  this situation ("A failure here shouldn't break the rest of the
+  dashboard (PRD §49)") for the AI recommendation call, just never
+  extended to these two. This render path fires on EVERY visit to the
+  project page, but specifically fires as part of the Upload PDF Server
+  Action's own re-render (the upload succeeds, `revalidatePath` triggers a
+  fresh render of this exact page) — so any transient hiccup in either
+  unguarded call (network blip, momentary auth/cookie timing issue) would
+  crash a page whose actual content had already loaded successfully,
+  right after a successful upload. Not yet confirmed via an actual Vercel
+  Runtime Log stack trace (the user hadn't pulled one when this was
+  fixed) — this was diagnosed from re-reading the render path against the
+  established "her old accounts vs. brand-new user actions" pattern from
+  bugs #1 and #3 above, not from a confirmed stack trace. If this doesn't
+  fully resolve it, the Vercel Runtime Logs tab for the exact failing
+  request is the next step, not further static guessing.
+  **Fixed**: wrapped both calls in their own try/catch with
+  `console.error` logging and a graceful fallback (empty array for
+  materials — the client-side poll in `MaterialsList` picks up the real
+  data moments later regardless), matching the recommendation call's
+  existing pattern exactly rather than inventing a new one.
+  **Also proactively hardened** `spaces/[spaceId]/page.tsx`'s
+  `listProjectsForSpace` call, which had the identical shape of gap (an
+  unguarded secondary fetch sitting right after an already-`isNotFoundError`
+  -patched primary fetch) — not yet reported by a user, but same pattern,
+  fixed before it becomes bug #5 rather than waiting for another report.
+  Checked the third page with this shape (Tutor conversation page) —
+  it has no secondary unguarded call after `listMessages`, so nothing to
+  fix there.
+  **Not yet confirmed against production** — needs redeploy + retest, same
+  caveat as every fix above. If PDF upload still triggers `error.tsx`
+  after this, pull the exact error from Vercel's Runtime Logs tab for that
+  request rather than guessing further — this fix was reasoned from the
+  code pattern, not from a confirmed stack trace, so treat it as the most
+  likely fix, not a certain one.
+
 ## 5. Next Immediate Step
 
 Step 35: Deployment (Vercel + Supabase + Inngest Cloud). This is the first
