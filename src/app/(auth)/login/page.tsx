@@ -1,11 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
+// Next.js requires any use of useSearchParams() in a page to be wrapped in
+// a <Suspense> boundary, so it can statically prerender everything above
+// the boundary and defer only the part that actually needs the URL's
+// search params to the client. Without this, `next build` fails outright
+// during the "Generating static pages" step (confirmed via the actual
+// Vercel build log, not assumed) — this isn't optional/cosmetic, the build
+// cannot complete without it.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
