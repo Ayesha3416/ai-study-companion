@@ -62,7 +62,7 @@ export async function getGlobalAnalytics(): Promise<GlobalAnalytics> {
     supabase.from("projects").select("id", { count: "exact", head: true }).eq("owner_id", user.id),
     supabase.from("activity_events").select("event_type, created_at").eq("owner_id", user.id),
     supabase.from("concept_mastery").select("concept_id, mastery_level").eq("owner_id", user.id),
-    supabase.from("mastery_history").select("mastery_level, recorded_at").eq("owner_id", user.id),
+    supabase.from("mastery_history").select("concept_id, mastery_level, recorded_at").eq("owner_id", user.id),
     supabase
       .from("quiz_questions")
       .select("question_type, is_correct, score_percent, feedback, answered_at, created_at")
@@ -95,20 +95,30 @@ export async function getGlobalAnalytics(): Promise<GlobalAnalytics> {
   // Same "first-ever vs. current" trend classification as per-project
   // Growth Analysis (Step 21), just run across every concept the user has
   // regardless of which project it belongs to.
+  // **Same N+1 bug as per-project Growth Analysis (src/lib/mastery/
+  // growth.ts), fixed the same way — and here it's not just a fix but a
+  // straight-up removal of redundant work: `masteryHistoryResult` above
+  // already fetched every one of this user's mastery_history rows in ONE
+  // round trip (needed below for `masteryOverTime` regardless), it just
+  // wasn't being reused here. Grouping that already-fetched data by
+  // concept_id in JS, instead of firing one additional sequential query
+  // per concept, means this loop now costs zero extra round trips rather
+  // than one per concept in the user's ENTIRE account (worse than the
+  // per-project version, since this runs across every project).
+  const firstMasteryByConceptId = new Map<string, number>();
+  for (const h of [...(masteryHistoryResult.data ?? [])].sort(
+    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
+  )) {
+    if (!firstMasteryByConceptId.has(h.concept_id)) {
+      firstMasteryByConceptId.set(h.concept_id, h.mastery_level);
+    }
+  }
+
   let conceptsImproving = 0;
   let conceptsNeedingAttention = 0;
   for (const row of masteryRows) {
-    const { data: firstHistory, error: historyError } = await supabase
-      .from("mastery_history")
-      .select("mastery_level")
-      .eq("owner_id", user.id) // defense in depth — concept_id is already the current user's own (from the now-scoped masteryResult query above), but this whole file just proved "should already be scoped" isn't a safe assumption to leave unstated.
-      .eq("concept_id", row.concept_id)
-      .order("recorded_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (historyError) throw historyError;
-
-    const trend = classifyTrend(firstHistory?.mastery_level ?? row.mastery_level, row.mastery_level);
+    const previousMastery = firstMasteryByConceptId.get(row.concept_id) ?? row.mastery_level;
+    const trend = classifyTrend(previousMastery, row.mastery_level);
     if (trend === "improving") conceptsImproving++;
     if (trend === "needs_attention") conceptsNeedingAttention++;
   }

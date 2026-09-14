@@ -1874,6 +1874,80 @@ to production since they were shared in a chat):
   the `E394`-style digest in the new error screen is the fastest way to
   get a definitive answer instead of continuing to reason from the code.
 
+- **Correction to bug #5 above, same report thread**: user confirmed
+  "Confirm email" was already off in the production Supabase project —
+  ruling out that theory specifically (good that it was checked directly
+  rather than assumed). The real cause: even with confirmation off, the
+  Supabase browser client sets the new session cookie as part of
+  `signUp()`/`signInWithPassword()` resolving, but both
+  `signup/page.tsx` and `login/page.tsx` then called `router.push(...)`
+  — a soft, client-side Next.js transition. That transition's request to
+  the server can fire before the browser has actually finished
+  persisting the cookie write, so the very next Server Component render
+  (home/page.tsx, via `getHomeDashboardData()`) finds no user yet — a
+  genuine timing race between two independent operations (cookie
+  persistence vs. next navigation's request), not a config problem.
+  **Fixed**: both pages now do a hard `window.location.href = ...`
+  navigation instead of `router.push` + `router.refresh()` after a
+  successful auth call — a real, newly-issued browser request that
+  can't race ahead of a cookie write the way a client-side transition
+  can, which is the standard fix for this specific, well-known category
+  of Supabase-SSR-plus-Next.js-App-Router bug. (bug #5's separate
+  `!data.session` check for actual confirmation-required signups stays —
+  it's still correct/useful for any Supabase project that does have
+  confirmation on, just wasn't the active cause here.)
+  **Not yet confirmed against production.**
+
+- **Sixth bug found (user report — after bugs #4/#5/the navigation-race
+  fix, PDF upload worked for all new users on all devices, but ONE
+  specific account — the account used to test throughout this entire long
+  debugging session — kept hitting `error.tsx` on PDF upload, reproducibly,
+  even after a hard refresh)**. This one was diagnosed entirely by reading
+  code against the one fact that made this account different from every
+  other account: it has far more accumulated materials/concepts/quiz
+  history than any brand-new account could have, from being reused across
+  the whole conversation's testing. Root cause, found by following that
+  single fact to its logical conclusion rather than asking for more
+  diagnostics: `projects/[projectId]/page.tsx` calls
+  `getOrGenerateRecommendation()` synchronously in-render whenever a
+  cached recommendation is more than 10 minutes old — the same shape of
+  blocking AI call the Tutor conversation page already has and already
+  set `maxDuration = 60` for (with an explicit comment explaining why),
+  but that fix was never extended to this page. And `getGrowthAnalysis()`
+  (called inside that recommendation path) had a genuine N+1 query bug —
+  one sequential, individually-awaited `mastery_history` lookup per
+  concept in the project, in a plain `for` loop, not batched or
+  parallelized. A brand-new project (0-2 concepts) barely notices; a
+  project with dozens of concepts accumulated from real repeated use
+  racks up dozens of sequential network round-trips on every single call
+  — easily enough to exceed even a generous execution limit. The exact
+  same N+1 pattern was independently duplicated in
+  `analytics/global-analytics.ts`'s per-account (not per-project) version
+  of the same "improving vs. needs attention" classification — worse
+  there, since it runs across a user's entire history rather than one
+  project.
+  **Fixed with 3 pieces**:
+  1. Added `maxDuration = 60` to `projects/[projectId]/page.tsx`, matching
+     the Tutor page's existing pattern and justification.
+  2. `src/lib/mastery/growth.ts`'s `getGrowthAnalysis()`: replaced the
+     N+1 loop with one batched `mastery_history` query (`.in("concept_id",
+     conceptIds)`, ordered by `recorded_at`), grouped in JS to find each
+     concept's first-ever mastery value — one round-trip total regardless
+     of how many concepts the project has, instead of one per concept.
+  3. `src/lib/analytics/global-analytics.ts`: same fix, but better —
+     `masteryHistoryResult` was already being fetched once for
+     `masteryOverTime` a few lines below and just wasn't being reused
+     here. Added `concept_id` to that existing query's `select` and
+     grouped in JS, removing the N+1 entirely with ZERO additional round
+     trips rather than one batched one.
+  **Not yet confirmed against production** — same caveat as every fix in
+  this log. This is also very likely to measurably speed up the Growth
+  and Global Analytics pages for every account as a side effect, not just
+  fix this one account's crash, since the N+1 existed for everyone —
+  it just was slow enough to matter only for accounts with real
+  accumulated history, which in production will eventually be all of
+  them, not just this one test account.
+
 ## 5. Next Immediate Step
 
 Step 35: Deployment (Vercel + Supabase + Inngest Cloud). This is the first

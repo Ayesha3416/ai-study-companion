@@ -1,5 +1,20 @@
 export const dynamic = "force-dynamic"; // material status changes frequently once Step 7 (background processing) lands
 
+// This page calls getOrGenerateRecommendation() below, which (when the
+// last recommendation is more than 10 minutes old) runs a full Growth
+// Analysis over the project's entire history and then makes a live AI
+// call, synchronously, inside the render — the same shape of blocking
+// AI call the Tutor conversation page already has, and already set
+// maxDuration for (see that file's comment). This page was missing the
+// same fix. For a brand-new project with little history that call is
+// fast and stays under the platform's default execution timeout; for a
+// project with a lot of accumulated materials/quizzes/growth data (e.g.
+// an account used for extended testing) the same call does meaningfully
+// more work and can cross that default limit, getting killed mid-request
+// by the platform — which surfaces to the browser as a generic failure,
+// caught by error.tsx, with no indication it was actually a timeout.
+export const maxDuration = 60;
+
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";

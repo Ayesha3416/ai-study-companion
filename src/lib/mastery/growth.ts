@@ -43,19 +43,42 @@ export async function getGrowthAnalysis(projectId: string): Promise<ConceptGrowt
     .eq("project_id", projectId);
   if (masteryError) throw masteryError;
 
+  // **Bug fix (real production issue — found via one specific account
+  // reliably timing out on this page, traced back to here)**: this used
+  // to fetch each concept's first-ever mastery_history row inside the
+  // loop below, one sequential, individually-awaited round-trip per
+  // concept. That's fine for a project with a couple of concepts, but
+  // scales linearly with a project's entire concept history — a project
+  // that's accumulated dozens of concepts over real use (exactly what a
+  // long-lived, heavily-tested account looks like, vs. a brand-new one)
+  // could rack up dozens of sequential network round-trips on every
+  // single call, easily enough to approach or exceed a serverless
+  // function's execution limit even with a generous maxDuration. Fixed
+  // by fetching every relevant concept's history in ONE query (still just
+  // as correct — `order by recorded_at ascending` then keeping only the
+  // first row seen per concept_id — but now one round-trip total,
+  // regardless of how many concepts the project has, instead of one per
+  // concept).
+  const conceptIds = (masteryRows ?? []).map((r) => r.concept_id);
+  const firstMasteryByConceptId = new Map<string, number>();
+  if (conceptIds.length > 0) {
+    const { data: historyRows, error: historyError } = await supabase
+      .from("mastery_history")
+      .select("concept_id, mastery_level")
+      .in("concept_id", conceptIds)
+      .order("recorded_at", { ascending: true });
+    if (historyError) throw historyError;
+    for (const h of historyRows ?? []) {
+      if (!firstMasteryByConceptId.has(h.concept_id)) {
+        firstMasteryByConceptId.set(h.concept_id, h.mastery_level);
+      }
+    }
+  }
+
   const results: ConceptGrowth[] = [];
 
   for (const row of masteryRows ?? []) {
-    const { data: firstHistory, error: historyError } = await supabase
-      .from("mastery_history")
-      .select("mastery_level")
-      .eq("concept_id", row.concept_id)
-      .order("recorded_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (historyError) throw historyError;
-
-    const previousMastery = firstHistory?.mastery_level ?? row.mastery_level;
+    const previousMastery = firstMasteryByConceptId.get(row.concept_id) ?? row.mastery_level;
     const currentMastery = row.mastery_level;
     const trend = classifyTrend(previousMastery, currentMastery);
 
