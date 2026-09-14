@@ -1573,6 +1573,37 @@ to production since they were shared in a chat):
   deploy: confirm the runtime log no longer says `[turbopack]_runtime.js`
   (webpack fix took effect) AND that a real PDF upload reaches `ready`
   without a `DOMMatrix` error (canvas fix took effect).
+  **Update: confirmed working.** The Inngest Cloud dashboard now shows
+  `ai-study-companion` Active with both functions (`process-material` and
+  its `onFailure` handler) correctly registered, confirming the
+  `/api/inngest` route no longer crashes and the signing key is correctly
+  enforced (a plain unsigned browser visit correctly returning
+  `{"message":"Unauthorized"}` — verified against Inngest's own docs that
+  this is expected production behavior, not a new bug, before telling the
+  user it was good news).
+
+- **Bug fix (Step 35, deployment) — intermittent 404 on pages reached
+  immediately after creating something, fixed on reload**: user reported
+  some pages 404 right after being redirected to them (e.g., right after
+  creating a Space), but reloading the same URL a moment later works fine.
+  Swept every page calling `notFound()` after fetching by a URL param and
+  checked each for `export const dynamic = "force-dynamic"` — every other
+  equivalent detail page in this app already sets this (added deliberately
+  across earlier steps specifically to keep these pages always
+  server-rendered per-request rather than risk Next.js treating them as
+  cacheable), but two were missed: `spaces/[spaceId]/page.tsx` and
+  `projects/[projectId]/tutor/[conversationId]/page.tsx`. Both are exactly
+  the shape of page this symptom hits hardest: reached via a `redirect()`
+  immediately after an insert (`createSpace` → `/spaces/${data.id}`;
+  starting a new Tutor conversation → `/tutor/${conversationId}`), so
+  there's no time gap between the row existing and the page trying to read
+  it back — any caching Next.js applies by default to a dynamic segment
+  page not explicitly opted out of it becomes a real race, not just a
+  theoretical one. Added `export const dynamic = "force-dynamic"` to both,
+  matching the pattern already established everywhere else in this
+  codebase. Verified via a full sweep (`grep` for every `page.tsx` calling
+  `notFound()`) that all four such pages now have the directive, not just
+  the two reported.
 
 ## 5. Next Immediate Step
 
