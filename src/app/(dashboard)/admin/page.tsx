@@ -7,7 +7,7 @@ export default async function AdminOverviewPage() {
   const overview = await getAdminOverview();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-8">
+    <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8">
       <div>
         <h1 className="text-xl font-semibold">Admin Overview</h1>
         <p className="mt-1 text-sm text-neutral-500">

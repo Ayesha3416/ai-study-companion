@@ -38,7 +38,7 @@ export default function SignupPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl border border-neutral-200 p-8"
+        className="w-full max-w-sm space-y-4 rounded-xl border border-neutral-200 p-4 sm:p-8"
       >
         <h1 className="text-xl font-semibold">Create your account</h1>
 

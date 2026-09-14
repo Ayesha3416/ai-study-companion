@@ -25,8 +25,8 @@ export default async function AdminEvaluationPage() {
   const latest = runs[0] ?? null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-8">
-      <div className="flex items-start justify-between">
+    <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold">AI Evaluation</h1>
           <p className="mt-1 text-sm text-neutral-500">
@@ -36,10 +36,10 @@ export default async function AdminEvaluationPage() {
             first one&apos;s output.
           </p>
         </div>
-        <form action={triggerEvalRun}>
+        <form action={triggerEvalRun} className="shrink-0">
           <button
             type="submit"
-            className="shrink-0 rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white"
           >
             Run Evaluation Now
           </button>

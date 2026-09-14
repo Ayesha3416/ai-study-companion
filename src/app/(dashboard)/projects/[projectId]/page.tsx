@@ -53,7 +53,7 @@ export default async function ProjectDashboardPage({
   }
 
   return (
-    <div className="mx-auto max-w-3xl p-8 space-y-8">
+    <div className="mx-auto max-w-3xl p-4 sm:p-8 space-y-8">
       <div>
         <Link
           href={`/spaces/${project.space_id}`}

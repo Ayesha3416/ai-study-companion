@@ -25,7 +25,7 @@ export default async function ConversationPage({
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-8 space-y-4">
+    <div className="mx-auto max-w-2xl p-4 sm:p-8 space-y-4">
       <Link
         href={`/projects/${projectId}/tutor`}
         className="text-sm text-neutral-500 hover:underline"

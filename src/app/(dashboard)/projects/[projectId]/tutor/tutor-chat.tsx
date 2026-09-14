@@ -74,7 +74,7 @@ export function TutorChat({
   }
 
   return (
-    <div className="flex h-[600px] flex-col rounded-lg border">
+    <div className="flex h-[70vh] max-h-[600px] min-h-[360px] flex-col rounded-lg border">
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {messages.length === 0 && (
           <p className="text-sm text-neutral-500">

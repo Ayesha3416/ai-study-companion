@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic"; // same caching lesson as every other fr
 
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "@/app/(auth)/actions";
 import { getHomeDashboardData } from "@/lib/home/home-dashboard";
 import { StatCard } from "@/components/stat-card";
 import { MasteryBar } from "@/components/mastery-bar";
@@ -14,11 +13,6 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: profile } = user
-    ? await supabase.from("profiles").select("role").eq("id", user.id).single()
-    : { data: null };
-  const isAdmin = profile?.role === "admin";
-
   const {
     continueLearning,
     recentProjects,
@@ -28,44 +22,21 @@ export default async function HomePage() {
   } = await getHomeDashboardData();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-8">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">
-            Welcome back{user?.email ? `, ${user.email.split("@")[0]}` : ""}
-          </h1>
-          <p className="mt-1 text-sm text-neutral-500">
-            Here&apos;s where your learning stands.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/spaces"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
-          >
-            Your Spaces
-          </Link>
-          <Link
-            href="/analytics"
-            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
-          >
-            Your Analytics
-          </Link>
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50"
-            >
-              Admin
-            </Link>
-          )}
-          <form action={signOut}>
-            <button className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm">
-              Sign out
-            </button>
-          </form>
-        </div>
+    <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8">
+      <div>
+        <h1 className="text-xl font-semibold">
+          Welcome back{user?.email ? `, ${user.email.split("@")[0]}` : ""}
+        </h1>
+        <p className="mt-1 text-sm text-neutral-500">
+          Here&apos;s where your learning stands.
+        </p>
       </div>
+
+      {/* Spaces / Analytics / Admin / Sign out now live in the persistent
+          top nav (src/app/(dashboard)/layout.tsx) rather than being
+          duplicated here — this also removes what used to be an
+          unwrapped 4-button row that crowded the title on narrow
+          screens. */}
 
       {continueLearning ? (
         <Link
@@ -104,7 +75,7 @@ export default async function HomePage() {
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-neutral-700">Overall Progress</h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Spaces" value={overallProgress.spaceCount} />
           <StatCard label="Projects" value={overallProgress.projectCount} />
           <StatCard

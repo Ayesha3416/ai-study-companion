@@ -21,7 +21,7 @@ export default async function SpaceDashboardPage({
   const projects = await listProjectsForSpace(spaceId);
 
   return (
-    <div className="mx-auto max-w-3xl p-8 space-y-8">
+    <div className="mx-auto max-w-3xl p-4 sm:p-8 space-y-8">
       <div>
         <h1 className="text-xl font-semibold">
           {space.icon} {space.name}

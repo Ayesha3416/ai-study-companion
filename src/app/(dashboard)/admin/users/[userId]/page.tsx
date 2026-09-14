@@ -17,7 +17,7 @@ export default async function AdminUserDetailPage({
   if (!detail) notFound();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-8">
+    <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8">
       <div>
         <Link href="/admin/users" className="text-sm text-neutral-500 hover:underline">
           ← Back to Users
@@ -46,7 +46,7 @@ export default async function AdminUserDetailPage({
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-neutral-700">Usage</h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Tutor Conversations" value={detail.tutorConversations} />
           <StatCard label="Tutor Questions" value={detail.tutorQuestionsAsked} />
           <StatCard label="Quiz Questions Answered" value={detail.quizQuestionsAnswered} />

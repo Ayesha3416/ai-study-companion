@@ -55,7 +55,7 @@ export default async function AdminAiUsagePage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-8">
+    <div className="mx-auto max-w-4xl space-y-8 p-4 sm:p-8">
       <div>
         <h1 className="text-xl font-semibold">AI Usage &amp; Evaluation</h1>
         <p className="mt-1 text-sm text-neutral-500">
@@ -151,32 +151,34 @@ export default async function AdminAiUsagePage() {
                 )}
 
                 {firstPartySummary.byFeature.length > 0 && (
-                  <table className="mt-4 w-full text-left text-sm">
-                    <thead className="border-b text-neutral-500">
-                      <tr>
-                        <th className="py-2 pr-4 font-medium">Feature</th>
-                        <th className="py-2 pr-4 font-medium">Requests</th>
-                        <th className="py-2 pr-4 font-medium">Failures</th>
-                        <th className="py-2 pr-4 font-medium">Avg Latency</th>
-                        <th className="py-2 pr-4 font-medium">Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {firstPartySummary.byFeature.map((f) => (
-                        <tr key={f.feature} className="border-b last:border-0">
-                          <td className="py-2 pr-4 font-medium">
-                            {FEATURE_LABELS[f.feature] ?? f.feature}
-                          </td>
-                          <td className="py-2 pr-4">{f.requests}</td>
-                          <td className="py-2 pr-4">{f.failures}</td>
-                          <td className="py-2 pr-4">
-                            {f.avgLatencyMs === null ? "—" : `${f.avgLatencyMs}ms`}
-                          </td>
-                          <td className="py-2 pr-4">${f.totalCostUsd.toFixed(4)}</td>
+                  <div className="mt-4 overflow-x-auto rounded-lg border">
+                    <table className="w-full min-w-[560px] text-left text-sm">
+                      <thead className="border-b bg-neutral-50 text-neutral-500">
+                        <tr>
+                          <th className="py-2 pr-4 pl-4 font-medium">Feature</th>
+                          <th className="py-2 pr-4 font-medium">Requests</th>
+                          <th className="py-2 pr-4 font-medium">Failures</th>
+                          <th className="py-2 pr-4 font-medium">Avg Latency</th>
+                          <th className="py-2 pr-4 font-medium">Cost</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {firstPartySummary.byFeature.map((f) => (
+                          <tr key={f.feature} className="border-b last:border-0">
+                            <td className="py-2 pr-4 pl-4 font-medium">
+                              {FEATURE_LABELS[f.feature] ?? f.feature}
+                            </td>
+                            <td className="py-2 pr-4">{f.requests}</td>
+                            <td className="py-2 pr-4">{f.failures}</td>
+                            <td className="py-2 pr-4">
+                              {f.avgLatencyMs === null ? "—" : `${f.avgLatencyMs}ms`}
+                            </td>
+                            <td className="py-2 pr-4">${f.totalCostUsd.toFixed(4)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
 
                 <div className="mt-4">
@@ -225,34 +227,36 @@ export default async function AdminAiUsagePage() {
 
           <section>
             <h2 className="mb-3 text-sm font-medium text-neutral-700">By Feature</h2>
-            <table className="w-full text-left text-sm">
-              <thead className="border-b text-neutral-500">
-                <tr>
-                  <th className="py-2 pr-4 font-medium">Feature</th>
-                  <th className="py-2 pr-4 font-medium">Requests</th>
-                  <th className="py-2 pr-4 font-medium">Errors</th>
-                  <th className="py-2 pr-4 font-medium">Avg Latency</th>
-                  <th className="py-2 pr-4 font-medium">Tokens (in/out)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.byFeature.map((f) => (
-                  <tr key={f.feature} className="border-b last:border-0">
-                    <td className="py-2 pr-4 font-medium">
-                      {FEATURE_LABELS[f.feature] ?? f.feature}
-                    </td>
-                    <td className="py-2 pr-4">{f.requests}</td>
-                    <td className="py-2 pr-4">{f.errors}</td>
-                    <td className="py-2 pr-4">
-                      {f.avgLatencyMs === null ? "—" : `${f.avgLatencyMs}ms`}
-                    </td>
-                    <td className="py-2 pr-4 text-neutral-500">
-                      {f.totalInputTokens.toLocaleString()} / {f.totalOutputTokens.toLocaleString()}
-                    </td>
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full min-w-[560px] text-left text-sm">
+                <thead className="border-b bg-neutral-50 text-neutral-500">
+                  <tr>
+                    <th className="py-2 pr-4 pl-4 font-medium">Feature</th>
+                    <th className="py-2 pr-4 font-medium">Requests</th>
+                    <th className="py-2 pr-4 font-medium">Errors</th>
+                    <th className="py-2 pr-4 font-medium">Avg Latency</th>
+                    <th className="py-2 pr-4 font-medium">Tokens (in/out)</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {summary.byFeature.map((f) => (
+                    <tr key={f.feature} className="border-b last:border-0">
+                      <td className="py-2 pr-4 pl-4 font-medium">
+                        {FEATURE_LABELS[f.feature] ?? f.feature}
+                      </td>
+                      <td className="py-2 pr-4">{f.requests}</td>
+                      <td className="py-2 pr-4">{f.errors}</td>
+                      <td className="py-2 pr-4">
+                        {f.avgLatencyMs === null ? "—" : `${f.avgLatencyMs}ms`}
+                      </td>
+                      <td className="py-2 pr-4 text-neutral-500">
+                        {f.totalInputTokens.toLocaleString()} / {f.totalOutputTokens.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           {summary.byModel.length > 0 && (

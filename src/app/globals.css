@@ -12,12 +12,15 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* No component in this app uses Tailwind's `dark:` variant — every card,
+   border, and text color is hardcoded for a light background. The
+   previous `prefers-color-scheme: dark` override only flipped these two
+   CSS variables, which left the page background dark while every actual
+   component (cards, text, borders) stayed styled for light mode — a
+   broken, low-contrast experience for anyone with system dark mode on,
+   which is the default on most phones. Since dark mode isn't actually
+   implemented anywhere, staying consistently light is the correct fix
+   until a real dark theme is built out with matching `dark:` classes. */
 
 body {
   background: var(--background);

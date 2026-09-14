@@ -19,7 +19,7 @@ export default async function ProjectAnalyticsPage({
   const { activity, performance, growth, aiActivity } = analytics;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-8">
+    <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8">
       <div>
         <Link
           href={`/projects/${projectId}`}

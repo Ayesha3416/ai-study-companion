@@ -1572,6 +1572,95 @@ to production since they were shared in a chat):
   files (project/question/conversation-ID-scoped), `admin/*.ts` (correctly
   and intentionally relies on the RLS admin-bypass — that's its whole job).
 
+- **Responsiveness + missing-nav pass (new session, before Step 35)**: the
+  user asked for a full mobile-responsiveness pass, missing functionality
+  to be added, and broken functionality to be fixed, working from a
+  partial copy of the repo (uploaded as a zip, not a fresh `git clone`) —
+  **no `node_modules`, no network access in this sandbox**, so none of
+  this session's edits were verified with `tsc --noEmit`/`eslint`/
+  `vitest`. Run all three locally before trusting this is regression-free,
+  per this file's own repeated "static review alone keeps missing things"
+  lesson from Steps 29-30.
+  **Responsiveness fixes** (grepped for `grid-cols-` without a `sm:`
+  breakpoint, plain `<table>` with no scroll wrapper, and fixed pixel
+  widths — the same techniques used to build/verify everything else in
+  this file):
+  1. Two stat grids didn't follow the `grid-cols-2 sm:grid-cols-N` pattern
+     used everywhere else — Home's "Overall Progress" and Admin User
+     Detail's "Usage" section both had a bare `grid-cols-3` with no mobile
+     fallback. Fixed to `grid-cols-2 sm:grid-cols-3`, matching every other
+     stat grid in the app.
+  2. Five plain `<table>` elements had no responsive handling at all —
+     `admin/projects/page.tsx` (8 columns — the worst offender), both
+     tables in `admin/ai-usage/page.tsx`, and `admin/spaces/page.tsx`.
+     `admin/users/page.tsx` already wrapped its table correctly
+     (`overflow-x-auto rounded-lg border` + a `min-w-[...]` floor on the
+     `<table>` itself) — used that as the reference pattern and applied it
+     to the other four rather than inventing a second approach.
+  3. **Bigger, project-wide gap**: every one of the app's 20 page
+     containers used a flat `p-8` (32px) with no mobile scale-down —
+     ~17% of a 375px-wide phone's width eaten by padding alone on every
+     side, compounding with the grid/table issues above. Changed all 20 to
+     `p-4 sm:p-8` (including the login/signup form cards).
+  4. Admin nav bar (8 links + "Back to App" in one `flex` row, fixed
+     `px-8`) had no wrap or scroll — would overflow the viewport on
+     narrow screens. Fixed to `overflow-x-auto` + `whitespace-nowrap` +
+     hidden scrollbar (horizontal swipe instead of broken layout), and
+     `px-8` → `px-4 sm:px-8` to match the page-container fix above.
+  5. Admin Evaluation page's header (a long descriptive paragraph next to
+     a "Run Evaluation Now" button, both in one unwrapped `flex
+     justify-between` row) squeezed the paragraph into a narrow column on
+     mobile. Changed to `flex-col` on mobile, `sm:flex-row` at the `sm:`
+     breakpoint — same stacking approach used for the Tutor/Quiz message
+     layouts elsewhere.
+  6. Tutor chat window had a fixed `h-[600px]` — taller than the viewport
+     on some phones, forcing extra page scroll around an already-scrollable
+     panel. Changed to `h-[70vh] max-h-[600px] min-h-[360px]`.
+  7. `globals.css` had a `prefers-color-scheme: dark` media query flipping
+     the body background/foreground to near-black/near-white — but **zero**
+     components anywhere in the app use Tailwind's `dark:` variant, so
+     every card/border/text color stays hardcoded for light mode. On a
+     phone with system dark mode on (the default on most phones), this
+     produced a broken, low-contrast half-dark page. Confirmed via
+     `grep -rln "dark:" src` returning nothing before removing the
+     override — since dark mode isn't actually implemented, staying
+     consistently light is the correct fix until a real dark theme with
+     matching `dark:` classes gets built.
+  **Missing functionality found and added**: there was no persistent
+  navigation anywhere **outside** `/admin` — every non-admin page only had
+  a single "back to parent" breadcrumb link (Project → its Space, Quiz
+  attempt → its Project, etc.), so getting from deep inside a Tutor
+  conversation or Quiz back to Home/Spaces/Analytics meant editing the URL
+  by hand. This is a real gap against PRD §54's own framing of Home as
+  "the user's starting point" — a starting point you can only ever reach
+  by typing a URL isn't really one. Added
+  `src/app/(dashboard)/layout.tsx` — a shared top nav (Home / Spaces /
+  Analytics / Admin-if-admin / email / Sign out) wrapping every route
+  under `(dashboard)` (admin routes keep their own nested nav for
+  admin-specific sub-links; this is additive, not a replacement). Mirrors
+  the admin nav's responsive scroll pattern from fix #4 above. Only
+  renders when a session exists (`user &&` guard), so `/login`/`/signup`
+  are unaffected.
+  Reusing this new nav made Home page's own header redundant (it had
+  separately duplicated Spaces/Analytics/Admin/Sign-out as an **unwrapped
+  4-button row crowding the welcome message** — itself a mobile overflow
+  risk that hadn't been caught before). Simplified Home's header down to
+  just the welcome message + subtitle, removing the now-dead `isAdmin`
+  profile lookup and `signOut` import from that file (moved into the new
+  layout instead).
+  **Also fixed while in these files**: root layout's `<title>`/description
+  metadata was still literally "Create Next App" / "Generated by create
+  next app" — the actual product name/description had never been set.
+  Fixed in `src/app/layout.tsx`.
+  **Not yet done, flagged for the next session**: this was a UI-layer
+  sweep (Tailwind classes, page structure) grepped systematically across
+  every `.tsx` file under `src/app`/`src/components` — it did not re-audit
+  business logic, the AI pipeline, or anything already covered by Steps
+  1-34's extensive bug sweeps above. If "fix broken functionality" turns
+  up anything beyond what's already documented in this file, it needs a
+  separate pass through the actual feature logic (quiz adaptivity, mastery
+  math, retrieval, etc.), not just the UI layer this session touched.
+
 ## 5. Next Immediate Step
 
 Step 35: Deployment (Vercel + Supabase + Inngest Cloud). This is the first

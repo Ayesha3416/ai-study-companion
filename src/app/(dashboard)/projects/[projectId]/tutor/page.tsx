@@ -20,7 +20,7 @@ export default async function TutorPage({
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-8 space-y-6">
+    <div className="mx-auto max-w-2xl p-4 sm:p-8 space-y-6">
       <div>
         <Link
           href={`/projects/${projectId}`}

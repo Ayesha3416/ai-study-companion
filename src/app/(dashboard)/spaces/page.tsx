@@ -6,7 +6,7 @@ export default async function SpacesPage() {
   const spaces = await listSpaces();
 
   return (
-    <div className="mx-auto max-w-3xl p-8 space-y-8">
+    <div className="mx-auto max-w-3xl p-4 sm:p-8 space-y-8">
       <div>
         <h1 className="text-xl font-semibold">Your Spaces</h1>
         <p className="text-sm text-neutral-500">

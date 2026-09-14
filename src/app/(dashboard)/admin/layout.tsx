@@ -15,8 +15,8 @@ export default async function AdminLayout({
 
   return (
     <div>
-      <nav className="border-b bg-neutral-50 px-8 py-3">
-        <div className="mx-auto flex max-w-3xl items-center gap-4 text-sm">
+      <nav className="border-b bg-neutral-50 px-4 py-3 sm:px-8">
+        <div className="mx-auto flex max-w-3xl items-center gap-4 overflow-x-auto text-sm whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <span className="font-medium text-neutral-400">Admin</span>
           <Link href="/admin" className="hover:underline">
             Overview
@@ -42,7 +42,7 @@ export default async function AdminLayout({
           <Link href="/admin/evaluation" className="hover:underline">
             Evaluation
           </Link>
-          <Link href="/home" className="ml-auto text-neutral-400 hover:underline">
+          <Link href="/home" className="ml-auto shrink-0 text-neutral-400 hover:underline">
             ← Back to App
           </Link>
         </div>

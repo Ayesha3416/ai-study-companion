@@ -28,7 +28,7 @@ export default async function QuizAttemptPage({
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-8">
+    <div className="mx-auto max-w-2xl space-y-4 p-4 sm:p-8">
       <div className="flex items-center justify-between">
         <Link
           href={`/projects/${projectId}`}

@@ -8,7 +8,7 @@ export default async function AdminUsersPage() {
   const users = await listUsersForAdmin();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-8">
+    <div className="mx-auto max-w-3xl space-y-4 p-4 sm:p-8">
       <div>
         <h1 className="text-xl font-semibold">Users</h1>
         <p className="mt-1 text-sm text-neutral-500">{users.length} total</p>
