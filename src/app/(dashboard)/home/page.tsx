@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic"; // same caching lesson as every other frequently-changing dashboard in this app
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getHomeDashboardData } from "@/lib/home/home-dashboard";
 import { StatCard } from "@/components/stat-card";
@@ -13,6 +14,21 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // proxy.ts already redirects unauthenticated requests away from /home
+  // before this component ever runs — this is a second, independent check
+  // at the page level rather than trusting that as the only safety net.
+  // Previously, an unauthenticated request that somehow reached this page
+  // (e.g. the old signup flow redirecting here even when no session was
+  // actually issued — see (auth)/signup/page.tsx's fix) hit
+  // getHomeDashboardData()'s `if (!user) throw new Error("Not
+  // authenticated")` as an uncaught exception, landing straight on the
+  // generic error.tsx boundary. Redirecting to /login here instead is
+  // both a more correct outcome (this genuinely is an auth problem, not a
+  // "something went wrong, try again" one) and removes the crash.
+  if (!user) {
+    redirect("/login");
+  }
+
   const {
     continueLearning,
     recentProjects,
@@ -20,6 +36,7 @@ export default async function HomePage() {
     areasToImprove,
     recommendedNextStep,
   } = await getHomeDashboardData();
+
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-4 sm:p-8">

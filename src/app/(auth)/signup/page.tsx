@@ -12,13 +12,14 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkEmail, setCheckEmail] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password });
 
     setLoading(false);
 
@@ -27,11 +28,43 @@ export default function SignupPage() {
       return;
     }
 
-    // If email confirmation is on, tell the user to check their inbox.
-    // If it's off (default for new Supabase projects in dev), the user is
-    // signed in immediately.
+    // signUp() always resolves without an error even when email
+    // confirmation is required — the account is created, but no session
+    // is issued until the user clicks the confirmation link. This used to
+    // redirect to /home unconditionally either way, which meant an
+    // unconfirmed signup would hit a real "Not authenticated" crash the
+    // instant home/page.tsx's data fetch ran (proxy.ts's own auth check
+    // happens on a separate request and can't retroactively stop a
+    // client-side router.push that's already in flight with no session to
+    // find) — landing a brand-new user straight on the app's generic error
+    // boundary as their very first-ever impression of the product, with no
+    // indication they just needed to check their inbox. Checking for a
+    // session explicitly, rather than assuming signUp() succeeding means
+    // "signed in," is what actually distinguishes the two cases.
+    if (!data.session) {
+      setCheckEmail(true);
+      return;
+    }
+
     router.push("/home");
     router.refresh();
+  }
+
+  if (checkEmail) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <div className="w-full max-w-sm space-y-3 rounded-xl border border-neutral-200 p-4 text-center sm:p-8">
+          <h1 className="text-xl font-semibold">Check your email</h1>
+          <p className="text-sm text-neutral-500">
+            We sent a confirmation link to <strong>{email}</strong>. Click it
+            to activate your account, then come back and log in.
+          </p>
+          <Link href="/login" className="inline-block text-sm underline">
+            Back to log in
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return (

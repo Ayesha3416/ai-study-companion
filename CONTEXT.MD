@@ -1834,6 +1834,46 @@ to production since they were shared in a chat):
   code pattern, not from a confirmed stack trace, so treat it as the most
   likely fix, not a certain one.
 
+- **Fifth bug found (user report — error.tsx now firing on the very FIRST
+  page load right after creating a brand-new account, before doing
+  anything else; screenshot showed a Next.js error digest, "Reference:
+  2091958716@E394," which the user hadn't been told is a direct pointer to
+  the exact Vercel Runtime Log entry — flagged that explicitly since it
+  removes all guesswork for this and any future crash)**. Root cause,
+  found by reading the signup flow rather than guessing further:
+  `(auth)/signup/page.tsx` called `supabase.auth.signUp()` and then
+  unconditionally `router.push("/home")` regardless of whether a session
+  was actually issued. `signUp()` resolves without an `error` even when
+  Supabase's "Confirm email" setting is on — the account is created, but
+  no session exists until the confirmation link is clicked. `proxy.ts`
+  correctly blocks unauthenticated requests to `/home` on a *separate*
+  request, but can't retroactively stop a client-side `router.push` that's
+  already in flight with no session to find — so an unconfirmed signup
+  landed straight on `home/page.tsx`, which called
+  `getHomeDashboardData()`, which throws a plain `new Error("Not
+  authenticated")` when there's no user — an uncaught exception, straight
+  to `error.tsx`, as a brand-new user's literal first-ever impression of
+  the product. Matches the report exactly: not intermittent, not
+  works-for-her-not-for-others — genuinely fires on every signup if
+  "Confirm email" is enabled in the production Supabase project (worth the
+  user double-checking that setting specifically, alongside this fix).
+  **Fixed with 2 pieces**:
+  1. `signup/page.tsx` now checks `data.session` from the `signUp()`
+     response — if absent, shows a "Check your email" screen instead of
+     redirecting, rather than assuming "no error" means "signed in."
+  2. `home/page.tsx` now redirects to `/login` itself if `getUser()` finds
+     no user, rather than relying solely on `proxy.ts` as the only
+     unauthenticated-access safety net — same principle as bugs #2 and #4
+     above (a page shouldn't crash from a condition it can check and
+     handle directly), applied to auth this time instead of data-fetch
+     transients.
+  **Not yet confirmed against production** — needs redeploy + retest, and
+  the user still hasn't pulled the actual Vercel log entry for reference
+  `E394`, so this diagnosis (like bug #4's) is reasoned from the code, not
+  confirmed via stack trace. If a fresh signup still errors after this,
+  the `E394`-style digest in the new error screen is the fastest way to
+  get a definitive answer instead of continuing to reason from the code.
+
 ## 5. Next Immediate Step
 
 Step 35: Deployment (Vercel + Supabase + Inngest Cloud). This is the first
