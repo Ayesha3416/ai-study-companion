@@ -1,5 +1,22 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Demo Access
+
+Per the project brief's requirement for a demo access mechanism: use these
+credentials to log in without signing up.
+
+- **Email**: `demo@ai-study-companion.app`
+- **Password**: `AiStudyDemo2026!`
+
+This account has the **admin role**, so it can walk through both the main
+product journey (Spaces → Projects → Materials → Tutor → Quiz → Growth →
+Analytics) and the Admin Dashboard in one login — anything you do as this
+account while exploring the product shows up in its own Admin views too,
+since it's the only account that's been used.
+
+This is a shared demo account on a public repository — please don't rely on
+it holding any particular state between sessions.
+
 ## Getting Started
 
 First, run the development server:
